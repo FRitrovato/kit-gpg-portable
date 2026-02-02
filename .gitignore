@@ -1,0 +1,31 @@
+# ===== Runtime / output =====
+KIT_GPG/out/*
+KIT_GPG/reports/*
+KIT_GPG/in/*
+
+# Keep empty folders
+!KIT_GPG/out/.gitkeep
+!KIT_GPG/reports/.gitkeep
+!KIT_GPG/in/.gitkeep
+
+# ===== GPG runtime artifacts =====
+KIT_GPG/home/private-keys-v1.d/
+KIT_GPG/home/openpgp-revocs.d/
+KIT_GPG/home/*.kbx
+KIT_GPG/home/*.db
+KIT_GPG/home/*.lock
+KIT_GPG/home/*.log
+KIT_GPG/home/*.tmp
+
+# ===== OS / editor =====
+.DS_Store
+Thumbs.db
+.vscode/
+
+# (A) binari fuori repo
+bin/
+
+# output runtime
+out/
+reports/
+in/
