@@ -1,457 +1,410 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-chcp 65001 >nul 2>&1
 
-REM ==============================================================================
-REM  GPG PORTABLE - SETUP CHIAVI (Wizard unico) - Output "umano" + colori CMD-only
-REM ==============================================================================
-REM  Autore/Curatore:   - Francesco Ritrovato
+REM ==========================================================
+REM  KIT_GPG - Setup Chiavi (Wizard)
+REM  Versione CRISTALLIZZATA (algoritmi stabili)
 REM
-REM  Descrizione: Sostituire XXX con il nome dell'organizzazione/ente/persona che deve cifrare i file.
-REM
-REM  COSA FA QUESTO WIZARD (in parole semplici):
-REM   1) Prende dal kit la chiave pubblica di   xxx e la importa (così potrai cifrare per   xxx)
-REM   2) Crea la tua coppia di chiavi (pubblica + privata)
-REM        - la PRIVATA resta nel kit e NON deve uscire dal tuo PC/chiavetta
-REM        - la PUBBLICA è quella che invierai a   xxx
-REM   3) Esporta la tua chiave pubblica in out\ così la trovi subito pronta da inviare
-REM   4) Scrive un report e un riepilogo nel kit per audit e troubleshooting
-REM
-REM  SICUREZZA (regole d'oro):
-REM   - NON inviare mai la chiave privata.
-REM   - La passphrase deve essere lunga e non riutilizzata.
-REM   - Se il fingerprint della chiave   xxx non combacia, fermati.
-REM
-REM  COLORI:
-REM   - 0B (cyan): passi del wizard
-REM   - 0A (verde): OK / completato
-REM   - 0E (giallo): avvisi
-REM   - 0C (rosso): errori/blocchi
-REM   - 07 (neutro): info / percorsi
-REM ==============================================================================
+REM  PUNTI CHIAVE:
+REM   1) Parsing chiavi = "come il vecchio":
+REM      - gpg --list-secret-keys --with-colons --fingerprint
+REM      - estrazione fpr: e uid: su file separati
+REM      - estrazione email con tokens=2 delims=<> (robusta)
+REM   2) Multi-key: lista + selezione
+REM   3) Delete: BACKUP HOME prima + delete-secret-and-public-key
+REM   4) Generazione: PREPARE_AGENT_PINENTRY (fix "No pinentry")
+REM   5) Colori ANSI + output in italiano (ASCII-friendly)
+REM ==========================================================
 
-REM DEBUG: 1 = mostra righe [DBG] a video e su log, 0 = output pulito
-set "DEBUG=0"
+REM ----------------------------------------------------------
+REM COLORI ANSI (ESC) via PowerShell (ASCII-safe)
+REM ----------------------------------------------------------
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "[char]27"`) do set "ESC=%%A"
+set "C_RST=%ESC%[0m"
+set "C_RED=%ESC%[31m"
+set "C_GRN=%ESC%[32m"
+set "C_YEL=%ESC%[33m"
+set "C_CYA=%ESC%[36m"
+set "C_DIM=%ESC%[2m"
 
-REM ---------------------------
-REM Percorsi base (lo script sta in \run)
-REM ---------------------------
-set "BASEDIR=%~dp0.."
-for %%I in ("%BASEDIR%") do set "BASEDIR=%%~fI"
-
-set "BIN=%BASEDIR%\bin"
-set "HOME=%BASEDIR%\home"
-set "OUT=%BASEDIR%\out"
-set "TRUST=%BASEDIR%\trust"
-set "REPORTS=%BASEDIR%\reports"
-
-set "LOG=%REPORTS%\setup_keys.log"
-set "REPORT=%REPORTS%\setup_keys_report.txt"
-set "KIT_STATUS=%TRUST%\kit_keys_status.txt"
-
-set "  xxx_KEYFILE=%TRUST%\  xxx_publickey.asc"
-set "  xxx_FPRFILE=%TRUST%\fingerprint_  xxx.txt"
-
-REM ---------------------------
-REM Benvenuto
-REM ---------------------------
-call :CE 0B "=========================================================="
-call :CE 0B " GPG Portable - Setup chiavi (wizard unico)"
-call :CE 0B " Autore/Curatore: Francesco Ritrovato (  xxx)"
-call :CE 0B "=========================================================="
 echo.
-call :CE 07 "Ciao. Ti guido passo-passo."
-call :CE 07 "Alla fine avrai un file pronto da inviare a   xxx (la tua chiave pubblica)."
-call :CE 0E "Importante: la chiave PRIVATA resta qui e non va mai inviata."
+echo %C_CYA%==================================================%C_RST%
+echo %C_CYA%  GPG Portable - Setup Chiavi (DEBUG)%C_RST%
+echo %C_CYA%==================================================%C_RST%
 echo.
-call :CE 07 "Premi un tasto per iniziare."
-pause >nul
 
-REM ---------------------------
-REM [STEP 1] Prepara cartelle e controlla che gli eseguibili esistano
-REM ---------------------------
+REM ----------------------------------------------------------
+REM PATHS (NORMALIZZATI)
+REM ----------------------------------------------------------
+for %%I in ("%~dp0..") do set "BASE_DIR=%%~fI"
+set "BIN=%BASE_DIR%\bin"
+set "HOME=%BASE_DIR%\home"
+set "REPORT_DIR=%BASE_DIR%\reports"
+set "REPORT_FILE=%REPORT_DIR%\setup_keys.log"
+set "BACKUP_DIR=%BASE_DIR%\backups"
+
+REM ----------------------------------------------------------
+REM VAR DUMP (DEBUG)
+REM ----------------------------------------------------------
+echo %C_DIM%[VAR]%C_RST% ScriptName  = %~nx0
+echo %C_DIM%[VAR]%C_RST% ScriptDir   = %~dp0
+echo %C_DIM%[VAR]%C_RST% BASE_DIR    = %BASE_DIR%
+echo %C_DIM%[VAR]%C_RST% BIN         = %BIN%
+echo %C_DIM%[VAR]%C_RST% HOME        = %HOME%
+echo %C_DIM%[VAR]%C_RST% REPORT_DIR  = %REPORT_DIR%
+echo %C_DIM%[VAR]%C_RST% REPORT_FILE = %REPORT_FILE%
+echo %C_DIM%[VAR]%C_RST% BACKUP_DIR  = %BACKUP_DIR%
+echo %C_DIM%[VAR]%C_RST% TEMP        = %TEMP%
 echo.
-call :CE 0B "[1/8] Preparazione del kit (cartelle e componenti)..."
-call :CE 07 "Sto controllando che nel kit ci siano gli strumenti necessari."
 
-if not exist "%HOME%"    mkdir "%HOME%"    >nul 2>&1
-if not exist "%OUT%"     mkdir "%OUT%"     >nul 2>&1
-if not exist "%TRUST%"   mkdir "%TRUST%"   >nul 2>&1
-if not exist "%REPORTS%" mkdir "%REPORTS%" >nul 2>&1
+REM ----------------------------------------------------------
+REM CONTROLLI BASE
+REM ----------------------------------------------------------
+if not exist "%BIN%\gpg.exe" (
+  echo %C_RED%[FATALE]%C_RST% gpg.exe non trovato: %BIN%\gpg.exe
+  pause
+  exit /b 1
+)
+if not exist "%HOME%" (
+  echo %C_RED%[FATALE]%C_RST% HOME non trovata: %HOME%
+  pause
+  exit /b 1
+)
+if not exist "%REPORT_DIR%" mkdir "%REPORT_DIR%" >nul 2>&1
+if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%" >nul 2>&1
 
-if not exist "%HOME%"    call :Fail "Non riesco a creare la cartella: %HOME%"
-if not exist "%OUT%"     call :Fail "Non riesco a creare la cartella: %OUT%"
-if not exist "%TRUST%"   call :Fail "Non riesco a creare la cartella: %TRUST%"
-if not exist "%REPORTS%" call :Fail "Non riesco a creare la cartella: %REPORTS%"
-
-REM Modalit portable: il portachiavi GPG resta dentro al kit
-set "GNUPGHOME=%HOME%"
-set "PATH=%BIN%;%PATH%"
-
-REM Log di avvio (utile se qualcosa va storto)
-echo.>> "%LOG%"
-echo =============================================================================>> "%LOG%"
-echo [%DATE% %TIME%] setup_keys.cmd - Avvio (Francesco Ritrovato)>> "%LOG%"
-echo BASEDIR=%BASEDIR%>> "%LOG%"
-echo BIN=%BIN%>> "%LOG%"
-echo GNUPGHOME=%GNUPGHOME%>> "%LOG%"
-
-call :DBG "BASEDIR=%BASEDIR%"
-call :DBG "BIN=%BIN%"
-call :DBG "GNUPGHOME=%GNUPGHOME%"
-
-REM Controllo binari minimi
-if not exist "%BIN%\gpg.exe"          call :Fail "Manca gpg.exe in: %BIN%"
-if not exist "%BIN%\gpg-agent.exe"    call :Fail "Manca gpg-agent.exe in: %BIN%"
-if not exist "%BIN%\pinentry-w32.exe" call :Fail "Manca pinentry-w32.exe in: %BIN%"
-
-REM Forzo pinentry-w32 (evita pinentry sbagliati)
-> "%GNUPGHOME%\gpg-agent.conf" (
-  echo pinentry-program "%BIN%\pinentry-w32.exe"
+REM ----------------------------------------------------------
+REM Kill agent (solo se gpgconf esiste) + pulizia lock
+REM ----------------------------------------------------------
+if exist "%BIN%\gpgconf.exe" (
+  echo %C_CYA%[INFO]%C_RST% Arresto gpg-agent (gpgconf --kill all)
+  "%BIN%\gpgconf.exe" --kill all >nul 2>&1
+  echo %C_DIM%[DBG]%C_RST% RC gpgconf kill = %ERRORLEVEL%
+) else (
+  echo %C_YEL%[WARN]%C_RST% gpgconf.exe non trovato: %BIN%\gpgconf.exe
 )
 
-REM Verifica rapida: GPG parte?
-"%BIN%\gpg.exe" --version >> "%LOG%" 2>&1
-if errorlevel 1 call :Fail "GPG non si avvia. Controlla il log: %LOG%"
-
-call :CE 0A "[OK] Kit pronto."
-
-REM ---------------------------
-REM [STEP 2] Import chiave pubblica   xxx + (se presente) verifica fingerprint
-REM ---------------------------
+echo %C_CYA%[INFO]%C_RST% Pulizia file lock
+del /q "%HOME%\*.lock" 2>nul
+if exist "%HOME%\private-keys-v1.d" del /q "%HOME%\private-keys-v1.d\*.lock" 2>nul
 echo.
-call :CE 0B "[2/8] Chiave pubblica di   xxx: import e controllo..."
-call :CE 07 "Questo passaggio serve a mettere nel kit la chiave pubblica di   xxx."
-call :CE 07 "In questo modo potrai cifrare i file destinati a   xxx."
 
-set "  xxx_IMPORTED_FPR="
-set "  xxx_FPR_TMP="
-set "  xxx_FPR_CHECK=SKIPPED"
-set "  xxx_EXPECTED_FPR="
+REM ==========================================================
+REM STEP 0 - SANITY
+REM ==========================================================
+echo %C_CYA%================== STEP 0 ==================%C_RST%
+"%BIN%\gpg.exe" --homedir "%HOME%" --list-secret-keys >nul 2>&1
+echo %C_DIM%[DBG]%C_RST% RC gpg --list-secret-keys = %ERRORLEVEL%
+echo.
 
-if not exist "%  xxx_KEYFILE%" (
-  call :CE 0E "[WARN] Non trovo la chiave pubblica di   xxx nel kit:"
-  call :CE 07 "  %  xxx_KEYFILE%"
-  call :CE 0E "[WARN] Salto l'import. Aggiungi il file e rilancia lo script."
-  echo [%DATE% %TIME%] WARN:   xxx keyfile mancante: %  xxx_KEYFILE%>> "%LOG%"
-  goto :After  xxxImport
+REM ==========================================================
+REM STEP 1 - BUILD KEY LIST (CRISTALLIZZATO)
+REM ==========================================================
+call :BUILD_KEY_LIST
+if errorlevel 1 (
+  echo %C_RED%[FATALE]%C_RST% Errore costruzione lista chiavi.
+  pause
+  goto END
 )
 
-call :CE 07 "[INFO] File chiave pubblica   xxx:"
-call :CE 07 "  %  xxx_KEYFILE%"
-
-"%BIN%\gpg.exe" --import "%  xxx_KEYFILE%" >> "%LOG%" 2>&1
-if errorlevel 1 call :Fail "Import della chiave pubblica   xxx fallito. Vedi log: %LOG%"
-call :CE 0A "[OK] Chiave pubblica   xxx importata."
-
-REM Estrazione fingerprint dal file (show-only) su output colons
-set "TMP_SHOW=%REPORTS%\_  xxx_showonly_colons.txt"
-"%BIN%\gpg.exe" --with-colons --import-options show-only --import "%  xxx_KEYFILE%" > "%TMP_SHOW%" 2>> "%LOG%"
-if not exist "%TMP_SHOW%" call :Fail "Non riesco a generare: %TMP_SHOW%"
-
-REM Parsing fingerprint (prende la prima riga fpr)
-set "TMP_FPR=%TMP_SHOW%"
-set "line="
-set "fingerprint="
-
-call :DBG "TMP_FPR(  xxx)=%TMP_FPR%"
-call :DBG "Dump fpr (  xxx):"
-call :DBG "----------------"
-
-call :CE 07 " "
-call :CE 07 "[INFO] Controllo identita' chiave   xxx (fingerprint)..."
-for /f "tokens=*" %%i in ('findstr /b "fpr" "%TMP_FPR%"') do (
-  if not defined   xxx_FPR_TMP (
-    set "line=%%i"
-    set "fingerprint=!line:fpr:=!"
-    set "fingerprint=!fingerprint::=!"
-    set "fingerprint=!fingerprint: =!"
-    set "  xxx_FPR_TMP=!fingerprint!"
-  )
+if "%KEY_COUNT%"=="0" (
+  echo %C_YEL%[INFO]%C_RST% Nessuna chiave trovata. Avvio generazione.
+  goto GEN_KEY
 )
 
-if not defined   xxx_FPR_TMP call :Fail "Non riesco a leggere il fingerprint   xxx dal file. Vedi %TMP_FPR% e %LOG%."
-set "  xxx_IMPORTED_FPR=%  xxx_FPR_TMP%"
+if "%KEY_COUNT%"=="1" (
+  set "FOUND_EMAIL=!K_EMAIL[1]!"
+  set "FOUND_FPR=!K_FPR[1]!"
+  goto MENU_KEY
+)
 
-call :CE 0A "[OK] Fingerprint   xxx (letto dal file):"
-call :CE 07 "  %  xxx_IMPORTED_FPR%"
+goto SELECT_KEY
 
-REM Se nel kit c fingerprint_  xxx.txt, faccio confronto (massima sicurezza)
-if exist "%  xxx_FPRFILE%" (
-  for /f "usebackq delims=" %%A in ("%  xxx_FPRFILE%") do (
-    if not defined   xxx_EXPECTED_FPR (
-      if not "%%A"=="" set "  xxx_EXPECTED_FPR=%%A"
-    )
-  )
+:SELECT_KEY
+echo %C_CYA%================== SELEZIONE CHIAVE ==================%C_RST%
+echo Trovate %KEY_COUNT% chiavi segrete.
+echo.
 
-  if defined   xxx_EXPECTED_FPR (
-    set "A=%  xxx_EXPECTED_FPR: =%"
-    set "B=%  xxx_IMPORTED_FPR: =%"
-    call :CE 07 "[INFO] Fingerprint atteso (dal kit):"
-    call :CE 07 "  %A%"
+for /L %%I in (1,1,%KEY_COUNT%) do (
+  echo   [%C_GRN%%%I%C_RST%] !K_EMAIL[%%I]!  -  !K_FPR[%%I]!
+)
 
-    if /I "%A%"=="%B%" (
-      set "  xxx_FPR_CHECK=OK"
-      call :CE 0A "[SUCCESS] Verifica fingerprint   xxx: OK."
+echo.
+set "SEL="
+set /p SEL=Seleziona numero chiave (1-%KEY_COUNT%) oppure [G] per generare una nuova:
+
+if /i "%SEL%"=="G" goto GEN_KEY
+
+echo %SEL%| "%SystemRoot%\System32\findstr.exe" /r "^[0-9][0-9]*$" >nul
+if errorlevel 1 (
+  echo %C_YEL%[WARN]%C_RST% Selezione non valida.
+  echo.
+  goto SELECT_KEY
+)
+
+if %SEL% LSS 1 goto SELECT_KEY
+if %SEL% GTR %KEY_COUNT% goto SELECT_KEY
+
+set "FOUND_EMAIL=!K_EMAIL[%SEL%]!"
+set "FOUND_FPR=!K_FPR[%SEL%]!"
+goto MENU_KEY
+
+:MENU_KEY
+echo %C_CYA%================== MENU ==================%C_RST%
+echo Chiave selezionata:
+echo   Email       : %C_GRN%%FOUND_EMAIL%%C_RST%
+echo   Fingerprint : %C_GRN%%FOUND_FPR%%C_RST%
+echo.
+echo  [U] Usa questa chiave (export pubblica)
+echo  [D] Cancella questa chiave (BACKUP HOME prima) e aggiorna lista
+echo  [S] Cambia chiave (torna alla selezione)
+echo  [L] Lista chiavi (output gpg)
+echo  [Q] Esci
+echo.
+
+set "CHOICE="
+set /p CHOICE=Scelta (U/D/S/L/Q):
+
+if /i "%CHOICE%"=="U" goto EXPORT_PUB
+if /i "%CHOICE%"=="D" goto DELETE_KEY
+if /i "%CHOICE%"=="S" goto SELECT_KEY
+if /i "%CHOICE%"=="L" goto LIST_KEYS
+if /i "%CHOICE%"=="Q" goto END
+
+echo %C_YEL%[WARN]%C_RST% Scelta non valida.
+echo.
+goto MENU_KEY
+
+:LIST_KEYS
+echo.
+echo %C_CYA%================== LISTA CHIAVI ==================%C_RST%
+"%BIN%\gpg.exe" --homedir "%HOME%" --list-secret-keys --keyid-format LONG
+echo.
+pause
+goto MENU_KEY
+
+:DELETE_KEY
+echo.
+echo %C_CYA%================== CANCELLAZIONE ==================%C_RST%
+set "CONF="
+set /p CONF=Confermi cancellazione chiave selezionata? (S/N):
+
+if /i not "%CONF%"=="S" (
+  echo %C_YEL%[INFO]%C_RST% Cancellazione annullata.
+  echo.
+  goto MENU_KEY
+)
+
+call :BACKUP_HOME
+if errorlevel 1 (
+  echo %C_RED%[FATALE]%C_RST% Backup fallito. Cancellazione annullata.
+  pause
+  goto MENU_KEY
+)
+
+set "TMP_DEL=%TEMP%\gpg_delete_%RANDOM%_%RANDOM%.txt"
+"%BIN%\gpg.exe" --homedir "%HOME%" --batch --yes --delete-secret-and-public-key "%FOUND_FPR%" >"%TMP_DEL%" 2>&1
+set "RC=%ERRORLEVEL%"
+echo %C_DIM%[DBG]%C_RST% RC delete = %RC%
+
+if not "%RC%"=="0" (
+  echo %C_RED%[ERRORE]%C_RST% Cancellazione fallita. Output:
+  type "%TMP_DEL%"
+  del /q "%TMP_DEL%" 2>nul
+  pause
+  goto MENU_KEY
+)
+
+del /q "%TMP_DEL%" 2>nul
+echo %C_GRN%[OK]%C_RST% Chiave cancellata.
+echo.
+
+call :BUILD_KEY_LIST
+if "%KEY_COUNT%"=="0" goto GEN_KEY
+goto SELECT_KEY
+
+REM ==========================================================
+REM GENERAZIONE CHIAVE (con fix pinentry)
+REM ==========================================================
+:GEN_KEY
+echo %C_CYA%================== GENERAZIONE CHIAVE ==================%C_RST%
+set /p REALNAME=Nome e Cognome (o Ufficio):
+set /p EMAIL=Email istituzionale:
+set /p COMMENT=Commento (es. Ufficio):
+
+call :PREPARE_AGENT_PINENTRY
+if errorlevel 1 (
+  echo %C_RED%[FATALE]%C_RST% Preflight pinentry fallito. Generazione annullata.
+  pause
+  goto END
+)
+
+echo %C_CYA%[INFO]%C_RST% Generazione chiave... (potrebbe comparire pinentry)
+echo %C_DIM%[DBG]%C_RST% CMD GEN = "%BIN%\gpg.exe" --homedir "%HOME%" --quick-generate-key "%REALNAME% (%COMMENT%) ^<%EMAIL%^>" rsa3072 sign,encrypt 3y
+
+"%BIN%\gpg.exe" --homedir "%HOME%" --quick-generate-key "%REALNAME% (%COMMENT%) <%EMAIL%>" rsa3072 sign,encrypt 3y
+set "RC=%ERRORLEVEL%"
+echo %C_DIM%[DBG]%C_RST% RC generate = %RC%
+
+if not "%RC%"=="0" (
+  echo %C_RED%[FATALE]%C_RST% Generazione fallita (RC=%RC%)
+  pause
+  goto END
+)
+
+call :BUILD_KEY_LIST
+goto SELECT_KEY
+
+REM ==========================================================
+REM EXPORT CHIAVE PUBBLICA
+REM ==========================================================
+:EXPORT_PUB
+echo %C_CYA%================== EXPORT ==================%C_RST%
+set "PUBKEY_FILE=%BASE_DIR%\public_key_%FOUND_EMAIL%.asc"
+echo %C_CYA%[INFO]%C_RST% Export chiave pubblica in: %PUBKEY_FILE%
+
+"%BIN%\gpg.exe" --homedir "%HOME%" --armor --export "%FOUND_FPR%" >"%PUBKEY_FILE%"
+set "RC=%ERRORLEVEL%"
+echo %C_DIM%[DBG]%C_RST% RC export = %RC%
+
+if exist "%PUBKEY_FILE%" (
+  echo %C_GRN%[OK]%C_RST% Export completato: %PUBKEY_FILE%
+) else (
+  echo %C_RED%[ERRORE]%C_RST% Export fallito (file non creato).
+)
+
+pause
+goto END
+
+REM ==========================================================
+REM BUILD_KEY_LIST (CRISTALLIZZATO: come vecchio)
+REM ==========================================================
+:BUILD_KEY_LIST
+set "KEY_COUNT=0"
+for /L %%I in (1,1,50) do (
+  set "K_FPR[%%I]="
+  set "K_EMAIL[%%I]="
+)
+
+set "TMP_ALL=%TEMP%\gpg_all_%RANDOM%_%RANDOM%.txt"
+set "TMP_FPRS=%TEMP%\gpg_fprs_%RANDOM%_%RANDOM%.txt"
+set "TMP_UIDS=%TEMP%\gpg_uids_%RANDOM%_%RANDOM%.txt"
+
+"%BIN%\gpg.exe" --homedir "%HOME%" --list-secret-keys --with-colons --fingerprint >"%TMP_ALL%" 2>&1
+set "RC=%ERRORLEVEL%"
+echo %C_DIM%[DBG]%C_RST% RC gpg colons+fpr = %RC%
+if not "%RC%"=="0" (
+  echo %C_RED%[ERRORE]%C_RST% gpg output fallito. Output:
+  type "%TMP_ALL%"
+  del /q "%TMP_ALL%" "%TMP_FPRS%" "%TMP_UIDS%" 2>nul
+  exit /b 1
+)
+
+"%SystemRoot%\System32\findstr.exe" /b "fpr:" "%TMP_ALL%" >"%TMP_FPRS%"
+"%SystemRoot%\System32\findstr.exe" /b "uid:" "%TMP_ALL%" >"%TMP_UIDS%"
+
+REM fingerprints
+set "I=0"
+for /f "usebackq delims=" %%L in ("%TMP_FPRS%") do (
+  set /a I+=1
+  set "ONE_FPR="
+  for /f "tokens=2 delims=:" %%F in ("%%L") do set "ONE_FPR=%%F"
+  set "K_FPR[!I!]=!ONE_FPR!"
+)
+set "KEY_COUNT=%I%"
+
+REM emails (tokens=2 delims=<>)
+set "I=0"
+for /f "usebackq delims=" %%L in ("%TMP_UIDS%") do (
+  set /a I+=1
+  if !I! GTR %KEY_COUNT% goto :EMAIL_DONE
+
+  set "ONE_EMAIL="
+  for /f "tokens=2 delims=<>" %%E in ("%%L") do set "ONE_EMAIL=%%E"
+
+  echo !ONE_EMAIL! | "%SystemRoot%\System32\findstr.exe" /i "@" >nul
+  if errorlevel 1 (
+    if not "!ONE_EMAIL!"=="" (
+      set "K_EMAIL[!I!]=(no email: !ONE_EMAIL!)"
     ) else (
-      set "  xxx_FPR_CHECK=FAIL"
-      call :CE 0C "[ALERT] Fingerprint   xxx NON combacia con quello atteso."
-      call :CE 0C "        Consiglio: FERMARE qui e segnalare."
-      choice /C AN /M "Vuoi ANNULLARE ora? (A=Annulla, N=Continua comunque)"
-      if errorlevel 2 (
-        echo [%DATE% %TIME%] WARNING: fingerprint mismatch, user continued>> "%LOG%"
-        call :CE 0E "[WARN] Hai scelto di continuare nonostante il mismatch."
-      ) else (
-        echo [%DATE% %TIME%] ABORT: user cancelled due to mismatch>> "%LOG%"
-        call :Fail "Operazione annullata: fingerprint   xxx non conforme."
-      )
+      set "K_EMAIL[!I!]=(no email)"
     )
   ) else (
-    call :CE 0E "[WARN] fingerprint_  xxx.txt presente ma vuoto/non leggibile."
-    echo [%DATE% %TIME%] WARN: fingerprint atteso vuoto>> "%LOG%"
+    set "K_EMAIL[!I!]=!ONE_EMAIL!"
   )
-) else (
-  call :CE 0E "[WARN] Nel kit non c' fingerprint_  xxx.txt: verifica manuale consigliata."
-  echo [%DATE% %TIME%] WARN: fingerprint atteso non presente>> "%LOG%"
 )
 
-:After  xxxImport
+:EMAIL_DONE
+del /q "%TMP_ALL%" "%TMP_FPRS%" "%TMP_UIDS%" 2>nul
+exit /b 0
 
-REM ---------------------------
-REM [STEP 3] Chiedo i dati per creare la tua chiave
-REM ---------------------------
-echo.
-call :CE 0B "[3/8] Dati della tua chiave..."
-call :CE 07 " "
-call :CE 07 "Ora creiamo la TUA chiave. Questi dati finiscono nella chiave pubblica."
-call :CE 07 "Non sono segreti, servono solo per riconoscerla."
-call :CE 07 "" 
-set /p "REALNAME=Nome e Cognome (o Ufficio): "
-if "%REALNAME%"=="" call :Fail "Nome/Ufficio non inserito."
+REM ==========================================================
+REM BACKUP HOME
+REM ==========================================================
+:BACKUP_HOME
+set "TS="
+for /f "usebackq delims=" %%T in (`powershell -NoProfile -Command "(Get-Date).ToString('yyyyMMdd_HHmmss')"`) do set "TS=%%T"
+if not defined TS exit /b 1
 
-set /p "EMAIL=Email istituzionale (anche generica): "
-if "%EMAIL%"=="" call :Fail "Email non inserita."
+set "BK=%BACKUP_DIR%\home_backup_%TS%"
+echo %C_CYA%[INFO]%C_RST% Backup HOME in: %BK%
+mkdir "%BK%" >nul 2>&1
 
-set /p "COMMENT=Commento (opzionale, es. Reparto/Ente): "
-set "EXPIRE=2y"
-
-echo.
-call :CE 07 "Riepilogo (quello che stai per creare):"
-call :CE 07 "  Nome/Ufficio : %REALNAME%"
-call :CE 07 "  Email        : %EMAIL%"
-if not "%COMMENT%"=="" call :CE 07 "  Commento     : %COMMENT%"
-call :CE 07 "  Scadenza     : %EXPIRE%"
-echo.
-call :CE 0E "[ATTENZIONE] Tra poco ti verra' chiesta una PASSPHRASE."
-call :CE 0E "           Deve essere lunga e non riutilizzata."
-choice /C SN /M "Procedo con la generazione della chiave? (S/N)"
-if errorlevel 2 call :Fail "Operazione annullata dall'utente."
-
-REM ---------------------------
-REM [STEP 4] Genero la chiave (GPG far comparire il prompt passphrase)
-REM ---------------------------
-echo.
-call :CE 0B "[4/8] Generazione della tua chiave..."
-call :CE 07 "Tra poco comparira' una finestra (o prompt) per inserire la passphrase."
-call :CE 07 "Non chiuderla: e' normale."
-
-set "BATCH=%REPORTS%\_keyparams.tmp"
-> "%BATCH%" (
-  echo Key-Type: RSA
-  echo Key-Length: 3072
-  echo Subkey-Type: RSA
-  echo Subkey-Length: 3072
-  echo Name-Real: %REALNAME%
-  if not "%COMMENT%"=="" echo Name-Comment: %COMMENT%
-  echo Name-Email: %EMAIL%
-  echo Expire-Date: %EXPIRE%
-  echo %%commit
+where robocopy >nul 2>&1
+if errorlevel 1 (
+  echo %C_RED%[ERRORE]%C_RST% robocopy non trovato.
+  exit /b 1
 )
 
-"%BIN%\gpg.exe" --batch --pinentry-mode default --full-generate-key "%BATCH%" >> "%LOG%" 2>&1
+robocopy "%HOME%" "%BK%" /E /R:1 /W:1 /NFL /NDL /NJH /NJS >nul
 set "RC=%ERRORLEVEL%"
-del /f /q "%BATCH%" >nul 2>&1
-if not "%RC%"=="0" call :Fail "Generazione chiave fallita (RC=%RC%). Controlla log: %LOG%"
+echo %C_DIM%[DBG]%C_RST% RC robocopy = %RC%
+if %RC% GEQ 8 exit /b 1
 
-call :CE 0A "[OK] Chiave creata."
+echo %C_GRN%[OK]%C_RST% Backup completato.
+exit /b 0
 
-REM ---------------------------
-REM [STEP 5] Recupero fingerprint della tua chiave (serve per export)
-REM ---------------------------
-echo.
-call :CE 0B "[5/8] Identifico la tua chiave (fingerprint)..."
-call :CE 07 "Ora leggo il fingerprint della tua chiave per esportare la pubblica."
+REM ==========================================================
+REM PREPARE_AGENT_PINENTRY (fix "No pinentry")
+REM ==========================================================
+:PREPARE_AGENT_PINENTRY
+setlocal EnableExtensions EnableDelayedExpansion
 
-set "MY_FPR="
-set "MY_FPR_TMP="
-set "TMP_MY=%REPORTS%\_my_fpr_colons.txt"
+REM Allinea gpg e agent sulla stessa HOME
+set "GNUPGHOME=%HOME%"
 
-"%BIN%\gpg.exe" --with-colons --list-secret-keys --fingerprint "%EMAIL%" > "%TMP_MY%" 2>> "%LOG%"
-if not exist "%TMP_MY%" call :Fail "Non riesco a generare: %TMP_MY%"
+REM Assicura risoluzione binari del KIT
+set "PATH=%BIN%;%PATH%"
 
-set "TMP_FPR=%TMP_MY%"
-set "line="
-set "fingerprint="
+REM Directory richieste
+if not exist "%HOME%\private-keys-v1.d" mkdir "%HOME%\private-keys-v1.d" >nul 2>&1
+if not exist "%HOME%\openpgp-revocs.d" mkdir "%HOME%\openpgp-revocs.d" >nul 2>&1
 
-for /f "tokens=*" %%i in ('findstr /b "fpr" "%TMP_FPR%"') do (
-  if not defined MY_FPR_TMP (
-    set "line=%%i"
-    set "fingerprint=!line:fpr:=!"
-    set "fingerprint=!fingerprint::=!"
-    set "fingerprint=!fingerprint: =!"
-    set "MY_FPR_TMP=!fingerprint!"
+REM Pinentry del KIT
+set "PINENTRY=%BIN%\pinentry-w32.exe"
+if not exist "%PINENTRY%" set "PINENTRY=%BIN%\pinentry.exe"
+
+if not exist "%PINENTRY%" (
+  endlocal & exit /b 2
+)
+
+set "AGENT_CONF=%HOME%\gpg-agent.conf"
+
+REM Se gia presente pinentry-program, non duplico
+if exist "%AGENT_CONF%" (
+  "%SystemRoot%\System32\findstr.exe" /i /c:"pinentry-program" "%AGENT_CONF%" >nul 2>&1
+  if not errorlevel 1 (
+    taskkill /F /IM gpg-agent.exe >nul 2>&1
+    endlocal & exit /b 0
   )
 )
 
-if not defined MY_FPR_TMP call :Fail "Non trovo il fingerprint della tua chiave. Controlla log: %LOG%"
-set "MY_FPR=%MY_FPR_TMP%"
+>>"%AGENT_CONF%" echo pinentry-program "%PINENTRY%"
 
-call :CE 0A "[OK] Fingerprint della tua chiave:"
-call :CE 07 "  %MY_FPR%"
+REM Riavvio agent (best-effort) per rileggere config
+taskkill /F /IM gpg-agent.exe >nul 2>&1
 
-REM ---------------------------
-REM [STEP 6] Export chiave pubblica da inviare a   xxx
-REM ---------------------------
-echo.
-call :CE 0B "[6/8] Creo il file da inviare a   xxx (chiave pubblica)..."
-call :CE 07 "Questo e' l'unico file che devi inviare a   xxx."
+endlocal & exit /b 0
 
-set "MY_PUBOUT=%OUT%\public_key_%MY_FPR%.asc"
-"%BIN%\gpg.exe" --armor --output "%MY_PUBOUT%" --export "%MY_FPR%" >> "%LOG%" 2>&1
-if errorlevel 1 call :Fail "Export chiave pubblica fallito. Controlla log: %LOG%"
-
-call :CE 0A "[OK] File chiave pubblica creato:"
-call :CE 07 "  %MY_PUBOUT%"
-
-REM ---------------------------
-REM [STEP 7] Report e riepilogo (NO blocchi IF con parentesi: parser-safe)
-REM ---------------------------
-echo.
-call :CE 0B "[7/8] Creo i documenti di riepilogo nel kit..."
-call :CE 07 "Servono per avere traccia di cosa e' stato fatto e dove trovare i file."
-
-REM === REPORT ===
-> "%REPORT%"  echo ==========================================================
->>"%REPORT%"  echo  GPG Portable - Setup chiavi (report)
->>"%REPORT%"  echo  Autore/Curatore kit: Francesco Ritrovato (  xxx)
->>"%REPORT%"  echo ==========================================================
->>"%REPORT%"  echo Data/Ora: %DATE% %TIME%
->>"%REPORT%"  echo.
->>"%REPORT%"  echo --- AMBIENTE PORTABLE ---
->>"%REPORT%"  echo GNUPGHOME:
->>"%REPORT%"  echo   %GNUPGHOME%
->>"%REPORT%"  echo.
->>"%REPORT%"  echo --- CHIAVE   xxx (PUBBLICA) ---
-
-if exist "%  xxx_KEYFILE%"  >>"%REPORT%" echo File: %  xxx_KEYFILE%
-if not exist "%  xxx_KEYFILE%" >>"%REPORT%" echo File: NON PRESENTE
-
-if exist "%  xxx_KEYFILE%"  >>"%REPORT%" echo Fingerprint (da file): %  xxx_IMPORTED_FPR%
-if exist "%  xxx_KEYFILE%"  >>"%REPORT%" echo Verifica fingerprint: %  xxx_FPR_CHECK%
-
-if exist "%  xxx_FPRFILE%"  >>"%REPORT%" echo Fingerprint atteso: %  xxx_EXPECTED_FPR%
-if not exist "%  xxx_FPRFILE%" >>"%REPORT%" echo Fingerprint atteso: NON PRESENTE
-
->>"%REPORT%"  echo.
->>"%REPORT%"  echo --- TUA CHIAVE (COPPIA) ---
->>"%REPORT%"  echo Fingerprint: %MY_FPR%
->>"%REPORT%"  echo Nome/Ufficio: %REALNAME%
->>"%REPORT%"  echo Email: %EMAIL%
-if not "%COMMENT%"=="" >>"%REPORT%" echo Commento: %COMMENT%
->>"%REPORT%"  echo Scadenza: %EXPIRE%
->>"%REPORT%"  echo.
->>"%REPORT%"  echo File TUA chiave pubblica (DA INVIARE A   xxx):
->>"%REPORT%"  echo   %MY_PUBOUT%
->>"%REPORT%"  echo ==========================================================
-
-REM === KIT STATUS ===
-> "%KIT_STATUS%" echo ==========================================================
->>"%KIT_STATUS%" echo  KIT GPG - RIEPILOGO CHIAVI
->>"%KIT_STATUS%" echo ==========================================================
->>"%KIT_STATUS%" echo Aggiornato: %DATE% %TIME%
->>"%KIT_STATUS%" echo.
->>"%KIT_STATUS%" echo [TUA CHIAVE]
->>"%KIT_STATUS%" echo Fingerprint: %MY_FPR%
->>"%KIT_STATUS%" echo Pubblica (da inviare a   xxx): %MY_PUBOUT%
->>"%KIT_STATUS%" echo Privata: presente in home\ (GNUPGHOME) - NON esportata
->>"%KIT_STATUS%" echo.
->>"%KIT_STATUS%" echo [CHIAVE   xxx]
-
-if exist "%  xxx_KEYFILE%"  >>"%KIT_STATUS%" echo File: %  xxx_KEYFILE%
-if not exist "%  xxx_KEYFILE%" >>"%KIT_STATUS%" echo File: NON PRESENTE (trust\  xxx_publickey.asc)
-
-if exist "%  xxx_KEYFILE%"  >>"%KIT_STATUS%" echo Fingerprint (da file): %  xxx_IMPORTED_FPR%
-if exist "%  xxx_KEYFILE%"  >>"%KIT_STATUS%" echo Verifica fingerprint: %  xxx_FPR_CHECK%
-
->>"%KIT_STATUS%" echo.
->>"%KIT_STATUS%" echo Log: %LOG%
->>"%KIT_STATUS%" echo Report: %REPORT%
->>"%KIT_STATUS%" echo ==========================================================
-
-call :CE 0A "[OK] Report creati."
-
-
-REM ---------------------------
-REM [STEP 8] Fine
-REM ---------------------------
-echo.
-call :CE 0B "=========================================================="
-call :CE 0A " SETUP COMPLETATO"
-call :CE 07 "Ora fai SOLO questa cosa:"
-call :CE 0A "1) Invia a   xxx questo file (chiave pubblica):"
-call :CE 07 "   %MY_PUBOUT%"
-call :CE 0E "2) NON inviare la chiave privata. Resta nel kit qui:"
-call :CE 07 "   %GNUPGHOME%"
-call :CE 0B "=========================================================="
-echo.
-call :CE 07 "Premi un tasto per chiudere."
-pause >nul
-exit /b 0
-
-REM ==============================================================================
-REM Funzioni di utilit
-REM ==============================================================================
-
-:DBG
-REM Scrive su log sempre, a video solo se DEBUG=1
-if not "%LOG%"=="" echo [%DATE% %TIME%] DBG: %~1>> "%LOG%"
-if "%DEBUG%"=="1" echo [DBG] %~1
-exit /b 0
-
-:CE
-REM :CE <ATTR> <TEXT>
-REM Stampa una riga colorata usando sequenze di escape ANSI native
-setlocal EnableExtensions EnableDelayedExpansion
-set "ATTR=%~1"
-set "TEXT=%~2"
-
-REM Definizione del carattere ESC (ASCII 27)
-for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
-
-REM Mappatura colori (0B=Cyan, 0A=Verde, 0E=Giallo, 0C=Rosso, 07=Reset)
-if /I "!ATTR!"=="0B" set "COLOR=36"
-if /I "!ATTR!"=="0A" set "COLOR=32"
-if /I "!ATTR!"=="0E" set "COLOR=33"
-if /I "!ATTR!"=="0C" set "COLOR=31"
-if /I "!ATTR!"=="07" set "COLOR=0"
-
-REM Stampa effettiva: ESC[codice m TESTO ESC[0m
-echo !ESC![!COLOR!m!TEXT!!ESC![0m
+:END
 endlocal
-exit /b 0
-
-:Fail
-REM Uscita controllata con messaggio chiaro e log
-set "MSG=%~1"
-echo.
-call :CE 0C "=========================================================="
-call :CE 0C " ERRORE - Setup non completato"
-call :CE 0C "=========================================================="
-call :CE 0C "%MSG%"
-echo.
-if not "%LOG%"=="" echo [%DATE% %TIME%] ERRORE: %MSG%>> "%LOG%"
-call :CE 07 "Log: %LOG%"
-echo.
-pause >nul
-exit /b 1
-
