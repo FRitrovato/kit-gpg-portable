@@ -133,14 +133,16 @@ set "PUBKEY_FILE=%TRUST_DIR%\sogei_publickey.asc"
 
 echo [INFO] TRUST_DIR: %TRUST_DIR%>>"%REPORT_FILE%"
 echo [INFO] PUBKEY_FILE: %PUBKEY_FILE%>>"%REPORT_FILE%"
-echo [INFO] TRUST_DIR: %TRUST_DIR%
-echo [INFO] PUBKEY_FILE: %PUBKEY_FILE%
+echo.
+echo(%ESC%[32m[INFO] TRUST_DIR: %TRUST_DIR%
+echo(%ESC%[32m [INFO] PUBKEY_FILE: %PUBKEY_FILE%
+echo. 
+echo(%ESC%[31m
 
 if exist "%PUBKEY_FILE%" (
     echo ---------------------------------------------------------->>"%REPORT_FILE%"
     echo [INFO] Import public key per verifica firma...>>"%REPORT_FILE%"
     "%GPG_EXE%" --homedir "%GNUPGHOME%" --import "%PUBKEY_FILE%" >>"%REPORT_FILE%" 2>&1
-    echo lanciato gpg 
     set "RC_IMPORT=%ERRORLEVEL%"
     echo [INFO] RC import: %RC_IMPORT%>>"%REPORT_FILE%"
     echo ---------------------------------------------------------->>"%REPORT_FILE%"
@@ -175,10 +177,10 @@ REM 8) ESITO - gestione robusta
 REM ============================================================================
 
 echo ---------------------------------------------------------->>"%REPORT_FILE%"
-echo RC (gpg): %RC%
+echo.
 echo File output: %OUT_FILE%
 echo Dimensione output (bytes): %OUT_SIZE%
-echo RC (gpg): %RC%>>"%REPORT_FILE%"
+echo.
 echo File output: %OUT_FILE%>>"%REPORT_FILE%"
 echo Dimensione output (bytes): %OUT_SIZE%>>"%REPORT_FILE%"
 echo ---------------------------------------------------------->>"%REPORT_FILE%"
@@ -202,7 +204,7 @@ echo Suggerimento: verificare chiavi private in "%GNUPGHOME%\private-keys-v1.d">
 goto :ESITO_END
 
 :OK
-echo [OK] File decifrato con successo (RC=%RC%)!
+echo(%ESC%[32m [OK] File decifrato con successo (RC=%RC%)!
 echo Lo trovi nella stessa cartella del file originale.
 echo [OK] Esito: SUCCESSO (RC=%RC%)>>"%REPORT_FILE%"
 echo File output: %OUT_FILE%>>"%REPORT_FILE%"
@@ -210,7 +212,7 @@ goto :ESITO_END
 
 :OK_WARNING
 echo.
-echo [OK] File decifrato, ma con AVVISI. (RC=%RC%)
+echo(%ESC%[32m [OK] File decifrato, ma con AVVISI. (RC=%RC%)
 echo Controlla il report per i dettagli (firma/chiavi di firma).
 echo Decrittazione OK, firma OK ma trust non validato
 echo [WARN] Esito: SUCCESSO CON AVVISI (RC=%RC%)>>"%REPORT_FILE%"
@@ -219,7 +221,7 @@ goto :ESITO_END
 
 :OK_SIGNFAIL
 echo.
-echo [OK] File decifrato, ma VERIFICA FIRMA FALLITA / NON VERIFICATA. (RC=%RC%)
+echo(%ESC%[32m [OK] File decifrato, ma VERIFICA FIRMA FALLITA / NON VERIFICATA. (RC=%RC%)
 echo Controlla il report: import key / trust / mismatch firma.
 echo [WARN] Esito: DECRITTAZIONE OK - FIRMA KO (RC=%RC%)>>"%REPORT_FILE%"
 echo File output: %OUT_FILE%>>"%REPORT_FILE%"
@@ -227,7 +229,7 @@ goto :ESITO_END
 
 :KO_DECFAIL
 echo.
-echo Decifratura fallita (RC=%RC%)
+echo(%ESC%[31m Decifratura fallita (RC=%RC%)
 echo Controlla il report: import key / trust / mismatch firma.
 echo [FAIL] Esito: DECRITTAZIONE KO - (RC=%RC%)>>"%REPORT_FILE%"
 echo File output: %OUT_FILE%>>"%REPORT_FILE%"
@@ -235,7 +237,7 @@ goto :ESITO_END
 
 :KO_PASS
 echo.
-echo Passprhase errata decifratura fallita (RC=%RC%)
+echo(%ESC%[31m Passprhase errata decifratura fallita (RC=%RC%)
 echo Controlla il report: Sbagliata la passphrase
 echo [FAIL] Esito: DECRITTAZIONE KO - No Passphrase- (RC=%RC%)>>"%REPORT_FILE%"
 echo File output: %OUT_FILE%>>"%REPORT_FILE%"
@@ -243,7 +245,7 @@ goto :ESITO_END
 
 :KO_NOKP
 echo.
-echo Manca chiave privata (RC=%RC%)
+echo(%ESC%[31m Manca chiave privata (RC=%RC%)
 echo Controlla il report: no chiave privata
 echo [FAIL] Esito: DECRITTAZIONE KO - No no chiave privata - (RC=%RC%)>>"%REPORT_FILE%"
 echo File output: %OUT_FILE%>>"%REPORT_FILE%"
@@ -251,7 +253,7 @@ goto :ESITO_END
 
 :ESITO_END
 echo ---------------------------------------------------------->>"%REPORT_FILE%"
-echo Fine operazione.(RC=%RC%)>>"%REPORT_FILE%"
+echo(%ESC%[32m Fine operazione.(RC=%RC%)>>"%REPORT_FILE%"
 
 REM ============================================================================
 REM 9) CHIUSURA
