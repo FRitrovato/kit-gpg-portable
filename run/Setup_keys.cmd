@@ -10,11 +10,11 @@ REM
 REM  Descrizione: Sostituire XXX con il nome dell'organizzazione/ente/persona che deve cifrare i file.
 REM
 REM  COSA FA QUESTO WIZARD (in parole semplici):
-REM   1) Prende dal kit la chiave pubblica di   xxx e la importa (così potrai cifrare per   xxx)
+REM   1) Prende dal kit la chiave pubblica di   xxx e la importa (cosÃ¬ potrai cifrare per   xxx)
 REM   2) Crea la tua coppia di chiavi (pubblica + privata)
 REM        - la PRIVATA resta nel kit e NON deve uscire dal tuo PC/chiavetta
-REM        - la PUBBLICA è quella che invierai a   xxx
-REM   3) Esporta la tua chiave pubblica in out\ così la trovi subito pronta da inviare
+REM        - la PUBBLICA Ã¨ quella che invierai a   xxx
+REM   3) Esporta la tua chiave pubblica in out\ cosÃ¬ la trovi subito pronta da inviare
 REM   4) Scrive un report e un riepilogo nel kit per audit e troubleshooting
 REM
 REM  SICUREZZA (regole d'oro):
@@ -84,7 +84,7 @@ if not exist "%OUT%"     call :Fail "Non riesco a creare la cartella: %OUT%"
 if not exist "%TRUST%"   call :Fail "Non riesco a creare la cartella: %TRUST%"
 if not exist "%REPORTS%" call :Fail "Non riesco a creare la cartella: %REPORTS%"
 
-REM Modalit portable: il portachiavi GPG resta dentro al kit
+REM ModalitÂ portable: il portachiavi GPG resta dentro al kit
 set "GNUPGHOME=%HOME%"
 set "PATH=%BIN%;%PATH%"
 
@@ -176,7 +176,7 @@ set "  xxx_IMPORTED_FPR=%  xxx_FPR_TMP%"
 call :CE 0A "[OK] Fingerprint   xxx (letto dal file):"
 call :CE 07 "  %  xxx_IMPORTED_FPR%"
 
-REM Se nel kit c fingerprint_  xxx.txt, faccio confronto (massima sicurezza)
+REM Se nel kit cÂÂ fingerprint_  xxx.txt, faccio confronto (massima sicurezza)
 if exist "%  xxx_FPRFILE%" (
   for /f "usebackq delims=" %%A in ("%  xxx_FPRFILE%") do (
     if not defined   xxx_EXPECTED_FPR (
@@ -211,7 +211,7 @@ if exist "%  xxx_FPRFILE%" (
     echo [%DATE% %TIME%] WARN: fingerprint atteso vuoto>> "%LOG%"
   )
 ) else (
-  call :CE 0E "[WARN] Nel kit non c' fingerprint_  xxx.txt: verifica manuale consigliata."
+  call :CE 0E "[WARN] Nel kit non c'Â fingerprint_  xxx.txt: verifica manuale consigliata."
   echo [%DATE% %TIME%] WARN: fingerprint atteso non presente>> "%LOG%"
 )
 
@@ -248,7 +248,7 @@ choice /C SN /M "Procedo con la generazione della chiave? (S/N)"
 if errorlevel 2 call :Fail "Operazione annullata dall'utente."
 
 REM ---------------------------
-REM [STEP 4] Genero la chiave (GPG far comparire il prompt passphrase)
+REM [STEP 4] Genero la chiave (GPG farÂ comparire il prompt passphrase)
 REM ---------------------------
 echo.
 call :CE 0B "[4/8] Generazione della tua chiave..."
@@ -409,7 +409,7 @@ pause >nul
 exit /b 0
 
 REM ==============================================================================
-REM Funzioni di utilit
+REM Funzioni di utilitÂ
 REM ==============================================================================
 
 :DBG
@@ -429,7 +429,7 @@ REM Definizione del carattere ESC (ASCII 27)
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 
 REM Mappatura colori (0B=Cyan, 0A=Verde, 0E=Giallo, 0C=Rosso, 07=Reset)
-if /I "!ATTR!"=="0B" set "COLOR=36
+if /I "!ATTR!"=="0B" set "COLOR=36"
 if /I "!ATTR!"=="0A" set "COLOR=32"
 if /I "!ATTR!"=="0E" set "COLOR=33"
 if /I "!ATTR!"=="0C" set "COLOR=31"
@@ -454,3 +454,4 @@ call :CE 07 "Log: %LOG%"
 echo.
 pause >nul
 exit /b 1
+
